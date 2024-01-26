@@ -1,0 +1,8 @@
+{
+  "editor.formatOnSave": true,
+  "files.associations": {
+    "inet.h": "c",
+    "pthread.h": "c",
+    "stdlib.h": "c"
+  }
+}
