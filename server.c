@@ -77,23 +77,24 @@ void *handle_connection(void *p_client_socket)
 {
     int client_socket = *((int *)p_client_socket);
     free(p_client_socket);
-    char buffer[BUFSIZ];
+    char read_buffer[BUFSIZ];
+    memset(read_buffer, '\0', sizeof(read_buffer));
+
     size_t byte_read;
     int msgsize = 0;
 
     // read each line to get new line char
     while (true)
     {
-        byte_read = recv(client_socket, buffer + msgsize, sizeof(buffer) - msgsize - 1, 0);
-        msgsize += byte_read;
+        memset(read_buffer, '\0', sizeof(read_buffer));
+        byte_read = recv(client_socket, read_buffer, sizeof(read_buffer), 0);
         if (byte_read > 0)
         {
-            buffer[byte_read] = 0;
             printf("SocketId %d\n", client_socket);
-            printf("Request %s\n", buffer);
+            printf("Request %s\n", read_buffer);
 
             char delim[] = "|";
-            char **tokens = split_string(buffer, delim);
+            char **tokens = split_string(read_buffer, delim);
 
             struct User *user = findUserBySocketId(client_socket);
             if (user == NULL)
@@ -104,42 +105,69 @@ void *handle_connection(void *p_client_socket)
                     char result[1024];
                     setUserSocketId((struct User *)userList, tokens[1], client_socket);
                     char *onlineUsers = getOnlineUserList(client_socket);
-                    sprintf(result, "user login accepted \n online users:\n %s", onlineUsers);
+                    sprintf(result, "ok|login|user login accepted \n write user id to start chat \n online users:\n %s", onlineUsers);
                     send(client_socket, result, strlen(result), 0);
                 }
                 else
                 {
-                    char result[] = "user login faild";
+                    char result[] = "error|login|user login faild";
                     send(client_socket, result, strlen(result), 0);
                 }
             }
             else
             {
+                printf("here2\n");
                 int receiver_socket = atoi(tokens[1]);
                 struct User *receiver_user = findUserBySocketId(receiver_socket);
                 if (receiver_user == NULL)
                 {
-                    char result[] = "user is offline";
+                    char result[] = "erorr|send|user is offline";
                     send(client_socket, result, strlen(result), 0);
                 }
                 else if (receiver_user->sockID == client_socket)
                 {
-                    char result[] = "Invalid user, You can not select your current user";
+                    char result[] = "erorr|send|Invalid user, You can not select your current user";
                     send(client_socket, result, strlen(result), 0);
                 }
-                else
+                // else if (strcmp(tokens[0], "send") == 0)
+                // {
+                //     char *result = malloc(MAX_CHAT_SIZE * sizeof(char));
+                //     char *chat = getUserChat(user);
+
+                //     updateChatStatus(user, receiver_user, tokens[2]);
+
+                //     sprintf(result, "ok|send|%s", tokens[2]);
+                //     send(receiver_socket, result, strlen(tokens[2]), 0);
+                //     free(result);
+                // }
+                else if (strcmp(tokens[0], "newsend") == 0 || strcmp(tokens[0], "send") == 0)
                 {
-                    send(receiver_socket, tokens[2], strlen(tokens[2]), 0);
+                    char *result = malloc(MAX_CHAT_SIZE * sizeof(char));
+                    char *client_result = malloc(MAX_CHAT_SIZE * sizeof(char));
+
+                    updateChatStatus(user, receiver_user, tokens[2]);
+
+                    char *chat = getUserChat(user);
+
+                    sprintf(client_result, "ok|send|%s|%d", chat, receiver_user->sockID);
+                    sprintf(result, "ok|send|%s|%d", chat, user->sockID);
+
+                    send(client_socket, client_result, strlen(client_result), 0);
+                    send(receiver_socket, result, strlen(result), 0);
+
+                    free(chat);
+                    free(result);
+                    free(client_result);
                 }
             }
 
-            send(client_socket, buffer, strlen(buffer), 0);
+            // send(client_socket, buffer, strlen(buffer), 0);
+
             if (byte_read == 0)
             {
                 printf("end");
                 break;
             }
-            printf("injaaaa");
         }
     }
     close(client_socket);
@@ -197,7 +225,7 @@ int login(char *username, char *password)
     return 0;
 }
 
-void addMessage(struct Message **history, const char *username, const char *message)
+void addMessage(struct Message **history, const char *username, const char *receiver, const char *message)
 {
     struct Message *newMessage = (struct Message *)malloc(sizeof(struct Message));
     if (newMessage == NULL)
@@ -207,6 +235,7 @@ void addMessage(struct Message **history, const char *username, const char *mess
     }
 
     strcpy(newMessage->sender, username);
+    strcpy(newMessage->receiver, receiver);
     strcpy(newMessage->message, message);
     newMessage->next = NULL;
 
@@ -240,7 +269,7 @@ void addUser(struct User **head, const char *username, const char *datetime)
 void displayList()
 {
     printf("displayList");
-    struct User *current = userList;
+    struct User *current = (struct User *)userList;
     while (current != NULL)
     {
         printf("Username: %s\n", current->username);
@@ -292,7 +321,7 @@ int startup()
 
     char message[100];
 
-    while (fscanf(chatFile, "%s    %s    %s", sendername, receiver, message) == 3)
+    while (fscanf(chatFile, "%49s\t%49s\t%150[^\n]%*c", sendername, receiver, message) == 3)
     {
         struct User *currentUser = (struct User *)userList;
         while (currentUser != NULL &&
@@ -301,7 +330,7 @@ int startup()
         {
             if (currentUser != NULL)
             {
-                addMessage(&(currentUser->chatHistory), sendername, message);
+                addMessage(&(currentUser->chatHistory), sendername, receiver, message);
             }
             else
             {
@@ -336,7 +365,7 @@ int startup()
     return 0;
 }
 
-struct User *findUserByName(struct User *userList, char username[])
+struct User *findUserByName(char username[])
 {
     struct User *currentUser = (struct User *)userList;
     while (currentUser->next != NULL)
@@ -371,7 +400,7 @@ void setUserSocketId(struct User *head, char *username, int socketId)
 struct User *findUserBySocketId(int socketId)
 {
     struct User *currentUser = (struct User *)userList;
-    while (currentUser->next != NULL)
+    while (currentUser != NULL)
     {
         if (currentUser->sockID == socketId)
             return currentUser;
@@ -382,23 +411,18 @@ struct User *findUserBySocketId(int socketId)
     return NULL;
 }
 
-char *createUserChat(struct User *userList)
+char *getUserChat(struct User *user)
 {
     char *chat = malloc(MAX_CHAT_SIZE * sizeof(*chat));
-    int count = 0;
-    struct User *currentUser = (struct User *)userList;
+    struct User *currentUser = (struct User *)user;
     struct Message *message = currentUser->chatHistory;
-    while (message->next != NULL)
+    while (message != NULL)
     {
-        if (strcmp(currentUser->username, message->sender) == 0)
-            strcpy(chat, message->sender);
-        else
-            strcpy(chat, message->receiver);
+        strcat(chat, message->sender);
         strcat(chat, ":");
         strcat(chat, message->message);
         strcat(chat, "\n");
 
-        count = count + 1;
         message = message->next;
     }
     return chat;
@@ -435,22 +459,45 @@ char *getOnlineUserList(int currentClientSocketId)
 {
     char *onlineUser = malloc(MAX_SIZE * sizeof(char));
     struct User *currentUser = (struct User *)userList;
+    memset(onlineUser, '\0', sizeof(onlineUser));
     while (currentUser != NULL)
     {
-        if (currentUser->sockID != 0)
-        {
-            int sock = currentUser->sockID;
-            char *username = currentUser->username;
-            if (currentUser->sockID == currentClientSocketId)
-                sprintf(onlineUser, "%d\t%s\t(current user)\n",
-                        sock, username);
-            else
-                sprintf(onlineUser, "%d\t%s\n",
-                        sock, username);
-        }
-
+        char sss[1000];
+        int sock = currentUser->sockID;
+        char *username = currentUser->username;
+        if (currentUser->sockID == currentClientSocketId)
+            sprintf(sss, "%d\t%s\t(current user)\n",
+                    sock, username);
+        else if (currentUser->sockID == 0)
+            sprintf(sss, "%d\t%s\t(offline)\n",
+                    sock, username);
+        else
+            sprintf(sss, "%d\t%s\n",
+                    sock, username);
+        strcat(onlineUser, sss);
         currentUser = currentUser->next;
     }
 
     return onlineUser;
+}
+
+void updateChatFile(const char *username, const char *receiver, const char *message)
+{
+    FILE *file = fopen("chat.tsv", "a");
+
+    if (file == NULL)
+    {
+        perror("Error opening file");
+        return;
+    }
+
+    fprintf(file, "%s\t%s\t%s", username, receiver, message);
+    fclose(file);
+}
+
+void updateChatStatus(struct User *user, struct User *receiver_user, const char *message)
+{
+    updateChatFile(user->username, receiver_user->username, message);
+    addMessage(&(user->chatHistory), user->username, receiver_user->username, message);
+    addMessage(&(receiver_user->chatHistory), user->username, receiver_user->username, message);
 }

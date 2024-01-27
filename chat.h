@@ -20,11 +20,13 @@ struct User
     int len;
 };
 
-void addMessage(struct Message **history, const char *username, const char *message);
+void addMessage(struct Message **history, const char *username, const char *receiver, const char *message);
 void addUser(struct User **head, const char *username, const char *datetime);
-struct User *findUserByName(struct User *userList, char username[]);
+struct User *findUserByName(char username[]);
 void setUserSocketId(struct User *head, char *username, int socketId);
 struct User *findUserBySocketId(int socketId);
-char *createUserChat(struct User *userList);
+char *getUserChat(struct User *user);
 char *getOnlineUserList(int currentClientSocketId);
+void updateChatFile(const char *username, const char *receiver, const char *message);
+void updateChatStatus(struct User *user, struct User *receiver_user, const char *message);
 #endif // CHAT_H

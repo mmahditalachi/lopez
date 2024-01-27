@@ -8,25 +8,39 @@
 #include <arpa/inet.h>
 #include <pthread.h>
 
-void startListeningAndPrintMessagesOnNewThread(int fd);
-
-void *listenAndPrint(void *p_socketFD);
-int check(int exp, const char *msg);
-
-void readConsoleEntriesAndSendToServer(int socketFD);
-typedef struct sockaddr_in SA_IN;
-typedef struct sockaddr SA;
 #define SERVERPORT 8989
 #define SOCKETERROR (-1)
 #define MAX_SIZE 50
+#define MAX_BUFFER_SIZE 50
+#define MAX_INPUT_SIZE 250
 
-bool login_accpeted = 0;
+typedef struct sockaddr_in SA_IN;
+typedef struct sockaddr SA;
+
+int login_accpeted = 0;
+int firstChat = 0;
+int chat_socket = 0;
+
+ssize_t amountReceived = 0;
+
+pthread_cond_t condStatus;
+pthread_mutex_t mutexloginAccpeted;
+pthread_mutex_t mutexChatSocket;
+
+void startListeningAndPrintMessagesOnNewThread(int fd);
+void readConsoleEntriesAndSendToServerOnNewThread(int socketFD);
+void *listenAndPrint(void *p_socketFD);
+int check(int exp, const char *msg);
+void *readConsoleEntriesAndSendToServer(void *p_socketFD);
+char **split_string(char *str, char *delim);
 
 int main()
 {
-
     int server_socket, client_socket, addr_size;
     SA_IN server_addr, cli;
+    pthread_cond_init(&condStatus, NULL);
+    pthread_mutex_init(&mutexloginAccpeted, NULL);
+    pthread_mutex_init(&mutexChatSocket, NULL);
 
     // socket create and verification
     check((server_socket = socket(AF_INET, SOCK_STREAM, 0)), "Failed to create connection");
@@ -46,71 +60,146 @@ int main()
 
     startListeningAndPrintMessagesOnNewThread(server_socket);
 
-    readConsoleEntriesAndSendToServer(server_socket);
+    readConsoleEntriesAndSendToServerOnNewThread(server_socket);
+
+    int s = 0;
+    scanf("%d", &s);
 
     close(server_socket);
+    pthread_cond_destroy(&condStatus);
+    pthread_mutex_destroy(&mutexloginAccpeted);
+    pthread_mutex_destroy(&mutexChatSocket);
 
     return 0;
 }
 
-void readConsoleEntriesAndSendToServer(int socketFD)
+void readConsoleEntriesAndSendToServerOnNewThread(int socketFD)
 {
-    char auth_buffer[1024];
-    char username[MAX_SIZE] = "User1";
-    char password[MAX_SIZE] = "password1";
-    int socket_id = 5;
+    pthread_t id;
+    int *pclient = malloc(sizeof(int));
+    *pclient = socketFD;
+    pthread_create(&id, NULL, readConsoleEntriesAndSendToServer, pclient);
 
-    // printf("Enter username: ");
-    // scanf("%s", username);
-    // printf("Enter password: ");
-    // scanf("%s", password);
+    if (pthread_join(id, NULL) != 0)
+    {
+        fprintf(stderr, "Error joining thread\n");
+        return;
+    }
 
-    char *line = NULL;
+    printf("Thread has completed.\n");
+}
+
+void *readConsoleEntriesAndSendToServer(void *p_socketFD)
+{
+    int socketFD = *((int *)p_socketFD);
+
     size_t lineSize = 0;
-
-    printf("type and we will send(type exit)...\n");
-    char buffer[1024];
 
     while (true)
     {
         // send  login  request to server
+        printf("login_accpeted:  %d  \n", login_accpeted);
         if (login_accpeted == 0)
         {
+            char username[MAX_SIZE];
+            char password[MAX_SIZE] = "password1";
+
+            printf("mohi inja\n");
+            printf("Enter username: \n");
+            scanf("%s", username);
+            // printf("Enter password: ");
+            // scanf("%s", password);
+
+            if (strlen(username) == 0 && strlen(password) == 0)
+                continue;
+
+            char *auth_buffer = malloc(MAX_BUFFER_SIZE * sizeof(char));
+            memset(auth_buffer, '\0', sizeof(auth_buffer));
+
             sprintf(auth_buffer, "login|%s|%s", username, password);
-            printf("auth message sent\n");
+
             ssize_t amountWasSent = send(socketFD,
                                          auth_buffer,
                                          strlen(auth_buffer), 0);
-            // chnage it to
-            login_accpeted = 1;
-        }
-        else
-        {
-            ssize_t charCount = getline(&line, &lineSize, stdin);
-            line[charCount - 1] = 0;
+            printf("auth message sent\n");
 
-            if (charCount > 0)
+            pthread_mutex_lock(&mutexloginAccpeted);
+
+            free(auth_buffer);
+        }
+        else if (amountReceived > 0)
+        {
+            char *buffer = malloc(MAX_BUFFER_SIZE * sizeof(char));
+
+            if (firstChat == 1)
             {
+                char line[1024];
+                memset(buffer, '\0', sizeof(buffer));
+                memset(line, '\0', sizeof(line));
+
+                printf("Enter Client SocketId: \n");
+                scanf("%d", &chat_socket);
+
+                printf("Enter message: \n");
+                if (!fgets(line, sizeof(line), stdin))
+                {
+                    fputs("io error\n", stderr);
+                    continue;
+                }
+
+                int charCount = strlen(line);
+
+                if (charCount == 0)
+                    continue;
 
                 if (strcmp(line, "exit") == 0)
                     break;
 
-                else
-                {
-                    sprintf(buffer, "send|%d|%s", socket_id, line);
-                    printf("message sent");
-                    ssize_t amountWasSent = send(socketFD,
-                                                 buffer,
-                                                 strlen(buffer), 0);
-                }
+                sprintf(buffer, "newsend|%d|%s", chat_socket, line);
+                printf("newsend message sent \n");
+                ssize_t amountWasSent = send(socketFD,
+                                             buffer,
+                                             strlen(buffer), 0);
             }
+            else
+            {
+                char line[MAX_BUFFER_SIZE];
+                memset(buffer, '\0', sizeof(buffer));
+                memset(line, '\0', sizeof(line));
+
+                printf("Enter message: \n");
+                if (!fgets(line, sizeof(line), stdin))
+                {
+                    fputs("io error\n", stderr);
+                    continue;
+                }
+
+                int charCount = strlen(line);
+
+                if (charCount == 0)
+                    continue;
+
+                if (strcmp(line, "exit") == 0)
+                    break;
+
+                sprintf(buffer, "send|%d|%s", chat_socket, line);
+                printf("message sent\n");
+                ssize_t amountWasSent = send(socketFD,
+                                             buffer,
+                                             strlen(buffer), 0);
+            }
+
+            free(buffer);
         }
+
+        pthread_cond_wait(&condStatus, &mutexloginAccpeted);
     }
+    printf("Exit");
+    return NULL;
 }
 
 void startListeningAndPrintMessagesOnNewThread(int socketFD)
 {
-
     pthread_t id;
     int *pclient = malloc(sizeof(int));
     *pclient = socketFD;
@@ -120,24 +209,67 @@ void startListeningAndPrintMessagesOnNewThread(int socketFD)
 void *listenAndPrint(void *p_socketFD)
 {
     int socketFD = *((int *)p_socketFD);
-
+    char delim[] = "|";
     char buffer[1024];
 
     while (true)
     {
-        ssize_t amountReceived = recv(socketFD, buffer, 1024, 0);
+        amountReceived = recv(socketFD, buffer, 1024, 0);
 
         login_accpeted = 1;
 
         if (amountReceived > 0)
         {
             buffer[amountReceived] = 0;
-            printf("Response was %s\n ", buffer);
+            login_accpeted = 1;
+
+            // printf("Response was: \n%s\n ", buffer);
+
+            char **tokens = split_string(buffer, delim);
+
+            if (strcmp(tokens[0], "ok") == 0 && strcmp(tokens[1], "login") == 0)
+            {
+                login_accpeted = 1;
+                firstChat = 1;
+            }
+            else if (strcmp(tokens[0], "error") == 0 && strcmp(tokens[1], "login") == 0)
+            {
+                printf("hreeeeeeeeeee \n");
+                login_accpeted = 0;
+            }
+            else if (strcmp(tokens[0], "error") == 0 && strcmp(tokens[1], "send") == 0)
+            {
+                firstChat = 1;
+            }
+            else if (strcmp(tokens[0], "error") == 0 && strcmp(tokens[1], "newsend") == 0)
+            {
+                firstChat = 1;
+            }
+            else if (strcmp(tokens[0], "ok") == 0 && strcmp(tokens[1], "send") == 0)
+            {
+                char socket_char[5];
+                sprintf(socket_char, "%d", socketFD);
+                printf("current_socket %d \n", socketFD);
+                printf("new_socket %s \n", socket_char);
+
+                pthread_mutex_lock(&mutexChatSocket);
+                chat_socket = atoi(tokens[3]);
+                pthread_mutex_unlock(&mutexChatSocket);
+
+                firstChat = 0;
+                system("clear");
+                printf("socket: %d\n", chat_socket);
+            }
+
+            printf("Response was: \n%s\n ", tokens[2]);
         }
 
-        if (amountReceived == 0)
-            break;
+        // if (amountReceived == 0)
+        //     break;
+        pthread_mutex_unlock(&mutexloginAccpeted);
+        pthread_cond_signal(&condStatus);
     }
+    printf("Exit");
 
     close(socketFD);
 }
@@ -150,4 +282,31 @@ int check(int exp, const char *msg)
         exit(1);
     }
     return exp;
+}
+
+char **split_string(char *str, char *delim)
+{
+    char **tokens = NULL;
+    int n = 0;
+    char *token = strtok(str, delim);
+    while (token != NULL)
+    {
+        tokens = realloc(tokens, sizeof(char *) * (n + 1));
+        if (tokens == NULL)
+        {
+            printf("Memory allocation error\n");
+            exit(1);
+        }
+        tokens[n] = strdup(token);
+        n++;
+        token = strtok(NULL, delim);
+    }
+    tokens = realloc(tokens, sizeof(char *) * (n + 1));
+    if (tokens == NULL)
+    {
+        printf("Memory allocation error\n");
+        exit(1);
+    }
+    tokens[n] = NULL;
+    return tokens;
 }
