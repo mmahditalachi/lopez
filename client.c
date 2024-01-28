@@ -7,6 +7,7 @@
 #include <limits.h>
 #include <arpa/inet.h>
 #include <pthread.h>
+#include <ctype.h>
 
 #define SERVERPORT 8989
 #define SOCKETERROR (-1)
@@ -33,6 +34,7 @@ void *listenAndPrint(void *p_socketFD);
 int check(int exp, const char *msg);
 void *readConsoleEntriesAndSendToServer(void *p_socketFD);
 char **split_string(char *str, char *delim);
+char *trimwhitespace(char *str);
 
 int main()
 {
@@ -142,11 +144,10 @@ void *readConsoleEntriesAndSendToServer(void *p_socketFD)
                 printf("Enter message: \n");
                 scanf("%250[^\n]", line);
 
-                printf("cmd %s \n", line);
+                trimwhitespace(line);
 
                 if (strcmp(line, "switch") == 0)
                 {
-                    printf("cmd %s \n", line);
                     pthread_mutex_lock(&mutexChatSocket);
                     chat_socket = 0;
                     firstChat = 1;
@@ -181,6 +182,8 @@ void *readConsoleEntriesAndSendToServer(void *p_socketFD)
                 fgets(line, 250, stdin);
 
                 int charCount = strlen(line);
+
+                trimwhitespace(line);
 
                 if (strcmp(line, "switch") == 0)
                 {
@@ -275,9 +278,6 @@ void *listenAndPrint(void *p_socketFD)
                 char socket_char[5];
                 sprintf(socket_char, "%d", socketFD);
                 int sender_socket = atoi(tokens[3]);
-                // printf("current socket: %d\n", chat_socket);
-                // printf("receiver socket: %d\n", sender_socket);
-                // printf("receiver socketFD: %d\n", socketFD);
 
                 if (chat_socket == sender_socket)
                 {
@@ -286,7 +286,6 @@ void *listenAndPrint(void *p_socketFD)
                     firstChat = 0;
                     pthread_mutex_unlock(&mutexChatSocket);
                     system("clear");
-                    // printf("socket: %d\n", chat_socket);
                     printf("Response was: \n%s\n", tokens[2]);
                 }
                 else
@@ -340,4 +339,23 @@ char **split_string(char *str, char *delim)
     }
     tokens[n] = NULL;
     return tokens;
+}
+
+char *trimwhitespace(char *str)
+{
+    char *end;
+
+    while (isspace((unsigned char)*str))
+        str++;
+
+    if (*str == 0)
+        return str;
+
+    end = str + strlen(str) - 1;
+    while (end > str && isspace((unsigned char)*end))
+        end--;
+
+    end[1] = '\0';
+
+    return str;
 }
