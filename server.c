@@ -128,17 +128,6 @@ void *handle_connection(void *p_client_socket)
                     char result[] = "error|send|Invalid user, You can not select your current user";
                     send(client_socket, result, strlen(result), 0);
                 }
-                // else if (strcmp(tokens[0], "send") == 0)
-                // {
-                //     char *result = malloc(MAX_CHAT_SIZE * sizeof(char));
-                //     char *chat = getUserChat(user);
-
-                //     updateChatStatus(user, receiver_user, tokens[2]);
-
-                //     sprintf(result, "ok|send|%s", tokens[2]);
-                //     send(receiver_socket, result, strlen(tokens[2]), 0);
-                //     free(result);
-                // }
                 else if (strcmp(tokens[0], "newsend") == 0 || strcmp(tokens[0], "send") == 0)
                 {
                     char *result = malloc(MAX_CHAT_SIZE * sizeof(char));
