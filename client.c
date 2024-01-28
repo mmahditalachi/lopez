@@ -98,13 +98,11 @@ void *readConsoleEntriesAndSendToServer(void *p_socketFD)
     while (true)
     {
         // send  login  request to server
-        printf("login_accpeted:  %d  \n", login_accpeted);
         if (login_accpeted == 0)
         {
             char username[MAX_SIZE];
             char password[MAX_SIZE] = "password1";
 
-            printf("mohi inja\n");
             printf("Enter username: \n");
             scanf("%s", username);
             // printf("Enter password: ");
@@ -123,8 +121,6 @@ void *readConsoleEntriesAndSendToServer(void *p_socketFD)
                                          strlen(auth_buffer), 0);
             printf("auth message sent\n");
 
-            pthread_mutex_lock(&mutexloginAccpeted);
-
             free(auth_buffer);
         }
         else if (amountReceived > 0)
@@ -133,17 +129,28 @@ void *readConsoleEntriesAndSendToServer(void *p_socketFD)
 
             if (firstChat == 1)
             {
-                char line[1024];
+                char line[250];
                 memset(buffer, '\0', sizeof(buffer));
                 memset(line, '\0', sizeof(line));
 
                 printf("Enter Client SocketId: \n");
                 scanf("%d", &chat_socket);
 
+                while (getchar() != '\n')
+                    ;
+
                 printf("Enter message: \n");
-                if (!fgets(line, sizeof(line), stdin))
+                scanf("%250[^\n]", line);
+
+                printf("cmd %s \n", line);
+
+                if (strcmp(line, "switch") == 0)
                 {
-                    fputs("io error\n", stderr);
+                    printf("cmd %s \n", line);
+                    pthread_mutex_lock(&mutexChatSocket);
+                    chat_socket = 0;
+                    firstChat = 1;
+                    pthread_mutex_unlock(&mutexChatSocket);
                     continue;
                 }
 
@@ -163,21 +170,32 @@ void *readConsoleEntriesAndSendToServer(void *p_socketFD)
             }
             else
             {
-                char line[MAX_BUFFER_SIZE];
+                char line[250];
                 memset(buffer, '\0', sizeof(buffer));
                 memset(line, '\0', sizeof(line));
 
+                while (getchar() != '\n')
+                    ;
+
                 printf("Enter message: \n");
-                if (!fgets(line, sizeof(line), stdin))
-                {
-                    fputs("io error\n", stderr);
-                    continue;
-                }
+                fgets(line, 250, stdin);
 
                 int charCount = strlen(line);
 
-                if (charCount == 0)
+                if (strcmp(line, "switch") == 0)
+                {
+                    pthread_mutex_lock(&mutexChatSocket);
+                    chat_socket = 0;
+                    firstChat = 1;
+                    pthread_mutex_unlock(&mutexChatSocket);
                     continue;
+                }
+
+                if (charCount == 0)
+                {
+                    printf("message not sent\n");
+                    continue;
+                }
 
                 if (strcmp(line, "exit") == 0)
                     break;
@@ -194,7 +212,8 @@ void *readConsoleEntriesAndSendToServer(void *p_socketFD)
 
         pthread_cond_wait(&condStatus, &mutexloginAccpeted);
     }
-    printf("Exit");
+
+    printf("Exit\n");
     return NULL;
 }
 
@@ -224,49 +243,61 @@ void *listenAndPrint(void *p_socketFD)
             login_accpeted = 1;
 
             // printf("Response was: \n%s\n ", buffer);
-
             char **tokens = split_string(buffer, delim);
 
             if (strcmp(tokens[0], "ok") == 0 && strcmp(tokens[1], "login") == 0)
             {
+                pthread_mutex_lock(&mutexloginAccpeted);
                 login_accpeted = 1;
+                pthread_mutex_unlock(&mutexloginAccpeted);
                 firstChat = 1;
+                printf("Response was: \n%s\n", tokens[2]);
             }
             else if (strcmp(tokens[0], "error") == 0 && strcmp(tokens[1], "login") == 0)
             {
-                printf("hreeeeeeeeeee \n");
+                pthread_mutex_lock(&mutexloginAccpeted);
                 login_accpeted = 0;
+                pthread_mutex_unlock(&mutexloginAccpeted);
+                printf("Response was: \n%s\n", tokens[2]);
             }
             else if (strcmp(tokens[0], "error") == 0 && strcmp(tokens[1], "send") == 0)
             {
                 firstChat = 1;
+                printf("Response was: \n%s\n", tokens[2]);
             }
             else if (strcmp(tokens[0], "error") == 0 && strcmp(tokens[1], "newsend") == 0)
             {
                 firstChat = 1;
+                printf("Response was: \n%s\n", tokens[2]);
             }
             else if (strcmp(tokens[0], "ok") == 0 && strcmp(tokens[1], "send") == 0)
             {
                 char socket_char[5];
                 sprintf(socket_char, "%d", socketFD);
-                printf("current_socket %d \n", socketFD);
-                printf("new_socket %s \n", socket_char);
+                int sender_socket = atoi(tokens[3]);
+                // printf("current socket: %d\n", chat_socket);
+                // printf("receiver socket: %d\n", sender_socket);
+                // printf("receiver socketFD: %d\n", socketFD);
 
-                pthread_mutex_lock(&mutexChatSocket);
-                chat_socket = atoi(tokens[3]);
-                pthread_mutex_unlock(&mutexChatSocket);
-
-                firstChat = 0;
-                system("clear");
-                printf("socket: %d\n", chat_socket);
+                if (chat_socket == sender_socket)
+                {
+                    pthread_mutex_lock(&mutexChatSocket);
+                    chat_socket = atoi(tokens[3]);
+                    firstChat = 0;
+                    pthread_mutex_unlock(&mutexChatSocket);
+                    system("clear");
+                    // printf("socket: %d\n", chat_socket);
+                    printf("Response was: \n%s\n", tokens[2]);
+                }
+                else
+                {
+                    printf("**New Message From SocketId: %s\n", tokens[3]);
+                }
             }
-
-            printf("Response was: \n%s\n ", tokens[2]);
         }
 
         // if (amountReceived == 0)
         //     break;
-        pthread_mutex_unlock(&mutexloginAccpeted);
         pthread_cond_signal(&condStatus);
     }
     printf("Exit");

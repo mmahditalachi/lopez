@@ -116,17 +116,16 @@ void *handle_connection(void *p_client_socket)
             }
             else
             {
-                printf("here2\n");
                 int receiver_socket = atoi(tokens[1]);
                 struct User *receiver_user = findUserBySocketId(receiver_socket);
                 if (receiver_user == NULL)
                 {
-                    char result[] = "erorr|send|user is offline";
+                    char result[] = "error|send|user is offline";
                     send(client_socket, result, strlen(result), 0);
                 }
                 else if (receiver_user->sockID == client_socket)
                 {
-                    char result[] = "erorr|send|Invalid user, You can not select your current user";
+                    char result[] = "error|send|Invalid user, You can not select your current user";
                     send(client_socket, result, strlen(result), 0);
                 }
                 // else if (strcmp(tokens[0], "send") == 0)
@@ -143,21 +142,21 @@ void *handle_connection(void *p_client_socket)
                 else if (strcmp(tokens[0], "newsend") == 0 || strcmp(tokens[0], "send") == 0)
                 {
                     char *result = malloc(MAX_CHAT_SIZE * sizeof(char));
-                    char *client_result = malloc(MAX_CHAT_SIZE * sizeof(char));
+                    char *receiver_result = malloc(MAX_CHAT_SIZE * sizeof(char));
 
                     updateChatStatus(user, receiver_user, tokens[2]);
 
-                    char *chat = getUserChat(user);
+                    char *chat = getUserChat(user, receiver_user->username);
 
-                    sprintf(client_result, "ok|send|%s|%d", chat, receiver_user->sockID);
-                    sprintf(result, "ok|send|%s|%d", chat, user->sockID);
+                    sprintf(receiver_result, "ok|send|%s|%d", chat, user->sockID);
+                    sprintf(result, "ok|send|%s|%d", chat, receiver_user->sockID);
 
-                    send(client_socket, client_result, strlen(client_result), 0);
-                    send(receiver_socket, result, strlen(result), 0);
+                    send(receiver_socket, receiver_result, strlen(receiver_result), 0);
+                    send(client_socket, result, strlen(result), 0);
 
                     free(chat);
                     free(result);
-                    free(client_result);
+                    free(receiver_result);
                 }
             }
 
@@ -330,7 +329,8 @@ int startup()
         {
             if (currentUser != NULL)
             {
-                addMessage(&(currentUser->chatHistory), sendername, receiver, message);
+                if (strcmp(currentUser->username, sendername) == 0 || strcmp(currentUser->username, receiver) == 0)
+                    addMessage(&(currentUser->chatHistory), sendername, receiver, message);
             }
             else
             {
@@ -411,17 +411,21 @@ struct User *findUserBySocketId(int socketId)
     return NULL;
 }
 
-char *getUserChat(struct User *user)
+char *getUserChat(struct User *user, const char *receiverName)
 {
     char *chat = malloc(MAX_CHAT_SIZE * sizeof(*chat));
     struct User *currentUser = (struct User *)user;
     struct Message *message = currentUser->chatHistory;
     while (message != NULL)
     {
-        strcat(chat, message->sender);
-        strcat(chat, ":");
-        strcat(chat, message->message);
-        strcat(chat, "\n");
+        if ((strcmp(message->receiver, currentUser->username) == 0 && strcmp(message->sender, receiverName) == 0) ||
+            (strcmp(message->receiver, receiverName) == 0 && strcmp(message->sender, currentUser->username) == 0))
+        {
+            strcat(chat, message->sender);
+            strcat(chat, ":");
+            strcat(chat, message->message);
+            strcat(chat, "\n");
+        }
 
         message = message->next;
     }
@@ -491,7 +495,7 @@ void updateChatFile(const char *username, const char *receiver, const char *mess
         return;
     }
 
-    fprintf(file, "%s\t%s\t%s", username, receiver, message);
+    fprintf(file, "\n%s\t%s\t%s", username, receiver, message);
     fclose(file);
 }
 
