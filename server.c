@@ -14,7 +14,7 @@
 #define SOCKETERROR (-1)
 #define SERVER_BACKLOG 1
 #define MAX_SIZE 50
-#define MAX_CHAT_SIZE 2000
+#define MAX_CHAT_SIZE 1000
 
 typedef struct sockaddr_in SA_IN;
 typedef struct sockaddr SA;
@@ -77,7 +77,7 @@ void *handle_connection(void *p_client_socket)
 {
     int client_socket = *((int *)p_client_socket);
     free(p_client_socket);
-    char read_buffer[BUFSIZ];
+    char read_buffer[MAX_CHAT_SIZE];
     memset(read_buffer, '\0', sizeof(read_buffer));
 
     size_t byte_read;
@@ -130,26 +130,26 @@ void *handle_connection(void *p_client_socket)
                 }
                 else if (strcmp(tokens[0], "newsend") == 0 || strcmp(tokens[0], "send") == 0)
                 {
-                    char *result = malloc(MAX_CHAT_SIZE * sizeof(char));
-                    char *receiver_result = malloc(MAX_CHAT_SIZE * sizeof(char));
 
-                    updateChatStatus(user, receiver_user, tokens[2]);
+                    char result[MAX_CHAT_SIZE];
+                    char receiver_result[MAX_CHAT_SIZE];
 
-                    char *chat = getUserChat(user, receiver_user->username);
+                    if (strcmp(tokens[2], "\n") != 0)
+                        updateChatStatus(user, receiver_user, tokens[2]);
 
-                    sprintf(receiver_result, "ok|send|%s|%d", chat, user->sockID);
-                    sprintf(result, "ok|send|%s|%d", chat, receiver_user->sockID);
+                    char *new_chat = getUserChat(user, receiver_user->username);
+
+                    sprintf(receiver_result, "ok|send|%s\nEnter Message:|%d", new_chat, user->sockID);
+                    sprintf(result, "ok|send|%s|%d", new_chat, receiver_user->sockID);
 
                     send(receiver_socket, receiver_result, strlen(receiver_result), 0);
                     send(client_socket, result, strlen(result), 0);
 
-                    free(chat);
-                    free(result);
-                    free(receiver_result);
+                    free(new_chat);
                 }
             }
 
-            // send(client_socket, buffer, strlen(buffer), 0);
+            free(tokens);
 
             if (byte_read == 0)
             {
@@ -160,17 +160,8 @@ void *handle_connection(void *p_client_socket)
     }
     close(client_socket);
 
-    // check(byte_read, "resv error");
-    // buffer[msgsize - 1] = 0; // remove \n
-
-    // printf("SocketId %d\n", client_socket);
-    // printf("Request %s\n", buffer);
-
-    // char result[] = "user login faild";
-    // check(send(client_socket, result, strlen(result), 0), "unable to send message");
-
     printf("closing connection");
-    // close(client_socket);
+    close(client_socket);
     return NULL;
 }
 
@@ -256,7 +247,7 @@ void addUser(struct User **head, const char *username, const char *datetime)
 
 void displayList()
 {
-    printf("displayList");
+    printf("displayList\n");
     struct User *current = (struct User *)userList;
     while (current != NULL)
     {
@@ -331,25 +322,9 @@ int startup()
 
     fclose(chatFile);
 
+    // seed users and messages test
     // Displaying the linked list
     // displayList();
-
-    // Freeing allocated memory
-    // while (userList != NULL)
-    // {
-    //     const struct User *temp = userList;
-    //     userList = userList->next;
-
-    //     struct Message *message = temp->chatHistory;
-    //     while (message != NULL)
-    //     {
-    //         struct Message *tempMessage = message;
-    //         message = message->next;
-    //         free(tempMessage);
-    //     }
-
-    //     free((void *)temp); // Cast away const-ness when freeing
-    // }
 
     return 0;
 }
@@ -402,7 +377,7 @@ struct User *findUserBySocketId(int socketId)
 
 char *getUserChat(struct User *user, const char *receiverName)
 {
-    char *chat = malloc(MAX_CHAT_SIZE * sizeof(*chat));
+    char *chat = malloc(MAX_CHAT_SIZE * sizeof(char));
     struct User *currentUser = (struct User *)user;
     struct Message *message = currentUser->chatHistory;
     while (message != NULL)
@@ -423,31 +398,22 @@ char *getUserChat(struct User *user, const char *receiverName)
 
 char **split_string(char *str, char *delim)
 {
-    char **tokens = NULL;
+    char **tokens = (char **)malloc(MAX_CHAT_SIZE * sizeof(char *));
     int n = 0;
+
     char *token = strtok(str, delim);
+
+    // delimiters present in str[].
     while (token != NULL)
     {
-        tokens = realloc(tokens, sizeof(char *) * (n + 1));
-        if (tokens == NULL)
-        {
-            printf("Memory allocation error\n");
-            exit(1);
-        }
-        tokens[n] = strdup(token);
-        n++;
+        printf(" %s\n", token);
+        tokens[n] = token;
         token = strtok(NULL, delim);
+        n++;
     }
-    tokens = realloc(tokens, sizeof(char *) * (n + 1));
-    if (tokens == NULL)
-    {
-        printf("Memory allocation error\n");
-        exit(1);
-    }
-    tokens[n] = NULL;
+
     return tokens;
 }
-
 char *getOnlineUserList(int currentClientSocketId)
 {
     char *onlineUser = malloc(MAX_SIZE * sizeof(char));

@@ -5,7 +5,7 @@ struct Message
 {
     char sender[50];
     char receiver[50];
-    char message[100];
+    char message[250];
     struct Message *next;
 };
 

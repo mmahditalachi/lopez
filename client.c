@@ -175,9 +175,9 @@ void *readConsoleEntriesAndSendToServer(void *p_socketFD)
                 memset(buffer, '\0', sizeof(buffer));
                 memset(line, '\0', sizeof(line));
 
-                while (getchar() != '\n')
-                    ;
-
+                // while (getchar() != '\n')
+                //     ;
+                fflush(stdin);
                 printf("Enter message: \n");
                 fgets(line, 250, stdin);
 
